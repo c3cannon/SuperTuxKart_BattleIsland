@@ -19,9 +19,8 @@ class TuxEnv(gym.Env):
         pystk.init(gfx_config)
 
         # Current action space is only steering left/right
-        self.action_space = gym.spaces.Tuple([
-                gym.spaces.Box(low=-1.0, high=1.0, shape=(1,)),
-                gym.spaces.Discrete(2)])
+        #self.action_space = gym.spaces.Tuple([gym.spaces.Box(low=-1.0, high=1.0, shape=(1,)), gym.spaces.Discrete(2)])
+        elf.action_space = spaces.Box(np.array([-1,0,0,0]), np.array([1,1,1,1]))  # steer, gas, brake, fire
         self.observation_space = gym.spaces.Box(low=0.0, high=1.0, shape=(96, 128,3))
 
         self.race = None
@@ -61,8 +60,11 @@ class TuxEnv(gym.Env):
         self.curr_iter +=1
 
         steer_dir = action[0]
-        rescue = action[1]
-        action = pystk.Action(steer=steer_dir, acceleration=0.5) # , rescue=rescue)
+        gas = action[1]
+        brake = action[2]
+        fire = actionn[3]
+        #rescue = action[1]
+        action = pystk.Action(steer=steer_dir, acceleration=gas, brake=brake, fire=fire) # , rescue=rescue)
         self.race.step(action)
         self.race.step(action)
         self.race.step(action)
@@ -82,6 +84,7 @@ class TuxEnv(gym.Env):
         new_distance = state.karts[0].distance_down_track
         delta = new_distance - self.prev_distance
 
+        #Rewaed for driving well
         reward = np.linalg.norm(state.karts[0].velocity) + new_distance / 10.0
         #reward = new_distance - self.prev_distance
         #reward = new_distance / 10000
@@ -90,6 +93,9 @@ class TuxEnv(gym.Env):
 
         #if is_stuck != rescue:
         #    reward -= 10000
+        #Reward for firing a projectile
+        if fire:
+          reward += 500
 
         done = (self.curr_iter == self.max_step) or is_stuck
 
