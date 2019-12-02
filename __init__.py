@@ -6,11 +6,7 @@ from ray.rllib.agents import ppo
 class TuxEnv(gym.Env):
     def __init__(self, _):
         print("calling __init__")
-        # Current action space is only steering left/right
-        #self.action_space = gym.spaces.Box(low=-1.0, high=1.0, shape=(1,))
-        self.action_space = gym.spaces.Tuple([
-                gym.spaces.Box(low=-1.0, high=1.0, shape=(1,)),
-                gym.spaces.Discrete(2)])
+        self.action_space = gym.spaces.Box(np.array([-1,0,0,0]), np.array([1,1,1,1]))  # steer, gas, brake, fire
         self.observation_space = gym.spaces.Box(low=0.0, high=1.0, shape=(96, 128,3))
 
     def reset(self):
@@ -50,7 +46,7 @@ config["num_gpus"] = 1
 config["num_workers"] = 0
 config["eager"] = False
 agent = ppo.PPOAgent(config=config, env=TuxEnv)
-agent.restore("project/checkpoint-22")
+agent.restore("project/checkpoint-50")
 
 prev_img = None
 
@@ -69,7 +65,10 @@ def drive(img):
     else:
         action = old_action
 
-    steer_dir = action
+    steer_dir = action[0]
+    gas = action[1]
+    brake = action[2]
+    fire = actionn[3]
     setter = count.set_img.remote(img)
     count.set_action.remote(action)
 
@@ -77,4 +76,4 @@ def drive(img):
         if np.sum(np.abs(img-prev)) < 50:
             return pystk.Action(rescue=True)
 
-    return pystk.Action(steer=steer_dir, acceleration=1.0)
+    return pystk.Action(steer=steer_dir, acceleration=gas, brake=brake, fire=fire)
