@@ -1,4 +1,5 @@
-import gym, ray
+import ray
+import gym
 from ray.rllib.agents import sac
 from ray.rllib.agents import ppo
 from ray.tune.logger import pretty_print
@@ -6,7 +7,8 @@ import pystk
 import numpy as np
 import tensorflow as tf
 
-print(pystk.list_karts())
+#print(pystk.list_karts())
+#print(pystk.list_tracks())
 
 class TuxEnv(gym.Env):
     def __init__(self, _):
@@ -20,7 +22,7 @@ class TuxEnv(gym.Env):
 
         # Current action space is only steering left/right
         #self.action_space = gym.spaces.Tuple([gym.spaces.Box(low=-1.0, high=1.0, shape=(1,)), gym.spaces.Discrete(2)])
-        elf.action_space = spaces.Box(np.array([-1,0,0,0]), np.array([1,1,1,1]))  # steer, gas, brake, fire
+        self.action_space = gym.spaces.Box(np.array([-1,0,0,0]), np.array([1,1,1,1]))  # steer, gas, brake, fire
         self.observation_space = gym.spaces.Box(low=0.0, high=1.0, shape=(96, 128,3))
 
         self.race = None
@@ -32,9 +34,10 @@ class TuxEnv(gym.Env):
         self.curr_iter = 0
         self.prev_distance = 0
 
-        race_config = pystk.RaceConfig()
+        #race_config = pystk.RaceConfig()
+        race_config = pystk.RaceConfig(num_kart=6, mode=pystk.RaceConfig.RaceMode.FREE_FOR_ALL)
         race_config.players[0].controller = pystk.PlayerConfig.Controller.PLAYER_CONTROL
-        #race_config.players[0].kart = "gnu"
+        race_config.players[0].kart = "gnu"
         race_config.track = 'battleisland'
         race_config.step_size = 0.1
 
@@ -55,14 +58,15 @@ class TuxEnv(gym.Env):
         img = np.asarray(self.race.render_data[0].image) / 255
         #i = np.concatenate((img,inst[..., np.newaxis]), axis=2)
         i = img
-        return i 
+        return i
+
     def step(self, action):
         self.curr_iter +=1
 
         steer_dir = action[0]
         gas = action[1]
         brake = action[2]
-        fire = actionn[3]
+        fire = action[3]
         #rescue = action[1]
         action = pystk.Action(steer=steer_dir, acceleration=gas, brake=brake, fire=fire) # , rescue=rescue)
         self.race.step(action)
@@ -76,6 +80,12 @@ class TuxEnv(gym.Env):
         state = pystk.WorldState()
         state.update()
 
+        scores = state.ffa.scores
+        kart = state.players[0].kart
+        rank = sorted(scores, reverse=True).index(scores[kart.id])
+        score = {0:10,1:8,2:6}.get(rank, 7-rank)
+        reward = score/10
+
         inst = np.asarray(self.race.render_data[0].instance) >> 24 
         img = np.asarray(self.race.render_data[0].image) / 255
         #i = np.concatenate((img,inst[..., np.newaxis]), axis=2)
@@ -83,19 +93,7 @@ class TuxEnv(gym.Env):
 
         new_distance = state.karts[0].distance_down_track
         delta = new_distance - self.prev_distance
-
-        #Rewaed for driving well
-        reward = np.linalg.norm(state.karts[0].velocity) + new_distance / 10.0
-        #reward = new_distance - self.prev_distance
-        #reward = new_distance / 10000
-        reward = - abs(state.karts[0].distance_from_center)**2 + delta*20
         is_stuck = (self.curr_iter > 10) and delta < 0.001
-
-        #if is_stuck != rescue:
-        #    reward -= 10000
-        #Reward for firing a projectile
-        if fire:
-          reward += 500
 
         done = (self.curr_iter == self.max_step) or is_stuck
 
@@ -116,7 +114,7 @@ if __name__ == '__main__':
         config={
             "env": TuxEnv,
             "evaluation_interval": 0,
-            "num_gpus": 1,
+            "num_gpus": 0,
             "num_workers": 0,
             "lambda": 0.95,
             "kl_coeff": 0.2,
@@ -124,7 +122,7 @@ if __name__ == '__main__':
             "vf_clip_param": 20,
             "num_sgd_iter": 30,
             "entropy_coeff": 0.01,
-            "eager": False,
+            "eager": False
             #"lr": tune.grid_search([0.001, 0.0001]),
-        },
+        }
     )
