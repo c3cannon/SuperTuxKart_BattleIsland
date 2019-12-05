@@ -6,7 +6,7 @@ from ray.rllib.agents import ppo
 class TuxEnv(gym.Env):
     def __init__(self, _):
         print("calling __init__")
-        self.action_space = gym.spaces.Box(np.array([-1,0,0,0]), np.array([1,1,1,1]))  # steer, gas, brake, fire
+        self.action_space = gym.spaces.Box(np.array([-1,0]), np.array([1,1]))  # steer, fire
         self.observation_space = gym.spaces.Box(low=0.0, high=1.0, shape=(96, 128,3))
 
     def reset(self):
@@ -66,9 +66,9 @@ def drive(img):
         action = old_action
 
     steer_dir = action[0]
-    gas = action[1]
-    brake = action[2]
-    fire = actionn[3]
+    #gas = action[1]
+    #brake = action[2]
+    fire = actionn[1]
     setter = count.set_img.remote(img)
     count.set_action.remote(action)
 
@@ -76,4 +76,4 @@ def drive(img):
         if np.sum(np.abs(img-prev)) < 50:
             return pystk.Action(rescue=True)
 
-    return pystk.Action(steer=steer_dir, acceleration=gas, brake=brake, fire=fire)
+    return pystk.Action(steer=steer_dir, acceleration=1.0, fire=fire)
