@@ -46,7 +46,7 @@ config["num_gpus"] = 1
 config["num_workers"] = 0
 config["eager"] = False
 agent = ppo.PPOAgent(config=config, env=TuxEnv)
-agent.restore("/content/gdrive/My Drive/checkpoint-1")
+agent.restore("project/checkpoint-50")
 
 prev_img = None
 
@@ -58,15 +58,15 @@ def drive(img, kart:pystk.Kart):
     img = np.asarray(img) / 255.0
 
     i, old_action  = ray.get(count.increment.remote())
-    print(i, old_action)
+    #print(i, old_action)
     prev = ray.get(count.get_img.remote())
 
     if type(old_action) == int:
         old_action = [old_action,old_action]
-    if i % 5 == 0:
-        action = agent.compute_action(img)
-    else:
-        action = old_action
+    #if i % 5 == 0:
+    action = agent.compute_action(img)
+    #else:
+    #action = old_action
 
     steer_dir = action[0]
     #gas = action[1]
@@ -75,8 +75,10 @@ def drive(img, kart:pystk.Kart):
     setter = count.set_img.remote(img)
     count.set_action.remote(action)
 
+    '''
     if i > 10:
         if np.sum(np.abs(img-prev)) < 50:
             return pystk.Action(rescue=True)
+    '''
 
     return pystk.Action(steer=steer_dir, acceleration=1.0, fire=fire)
