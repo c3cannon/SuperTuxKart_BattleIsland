@@ -6,8 +6,12 @@ from ray.rllib.agents import ppo
 class TuxEnv(gym.Env):
     def __init__(self, _):
         print("calling __init__")
-        self.action_space = gym.spaces.Box(np.array([-1,0]), np.array([1,1]))  # steer, fire
-        self.observation_space = gym.spaces.Box(low=0.0, high=1.0, shape=(96, 128,3))
+        
+        self.action_space = gym.spaces.Tuple([
+                gym.spaces.Box(low=-1.0, high=1.0, shape=(1,)),
+                gym.spaces.Discrete(2)])
+        #self.action_space = gym.spaces.Box(np.array([-1,0]), np.array([1,1]))  # steer, fire
+        self.observation_space = gym.spaces.Box(low=0.0, high=1.0, shape=(120, 160, 3))
 
     def reset(self):
         print("reset?")
@@ -46,13 +50,13 @@ config["num_gpus"] = 1
 config["num_workers"] = 0
 config["eager"] = False
 agent = ppo.PPOAgent(config=config, env=TuxEnv)
-agent.restore("project/checkpoint-50")
+agent.restore("project/checkpoint-11")
 
 prev_img = None
 
 def drive(img):
     """
-    @img: (96,128,3) RGB image
+    @img: (120,160,3) RGB image
     return: pystk.Action
     """
     img = np.asarray(img) / 255.0
@@ -68,7 +72,7 @@ def drive(img):
     steer_dir = action[0]
     #gas = action[1]
     #brake = action[2]
-    fire = actionn[1]
+    #fire = actionn[1]
     setter = count.set_img.remote(img)
     count.set_action.remote(action)
 
@@ -76,4 +80,5 @@ def drive(img):
         if np.sum(np.abs(img-prev)) < 50:
             return pystk.Action(rescue=True)
 
-    return pystk.Action(steer=steer_dir, acceleration=1.0, fire=fire)
+    return pystk.Action(steer=steer_dir, acceleration=1.0)
+
