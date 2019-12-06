@@ -14,8 +14,8 @@ class TuxEnv(gym.Env):
     def __init__(self, _):
         print("calling __init__")
         gfx_config = pystk.GraphicsConfig.ld()
-        gfx_config.screen_width = 128
-        gfx_config.screen_height = 96
+        gfx_config.screen_width = 160
+        gfx_config.screen_height = 120
         gfx_config.render_window = True
         pystk.clean()
         pystk.init(gfx_config)
@@ -23,7 +23,7 @@ class TuxEnv(gym.Env):
         # Current action space is only steering left/right
         #self.action_space = gym.spaces.Tuple([gym.spaces.Box(low=-1.0, high=1.0, shape=(1,)), gym.spaces.Discrete(2)])
         self.action_space = gym.spaces.Box(np.array([-1,0,0,0]), np.array([1,1,1,1]))  # steer, gas, brake, fire
-        self.observation_space = gym.spaces.Box(low=0.0, high=1.0, shape=(96, 128,3))
+        self.observation_space = gym.spaces.Box(low=0.0, high=1.0, shape=(120, 160,3))
 
         self.race = None
         self.max_step = 4000
@@ -85,6 +85,20 @@ class TuxEnv(gym.Env):
         rank = sorted(scores, reverse=True).index(scores[kart.id])
         score = {0:10,1:8,2:6}.get(rank, 7-rank)
         reward = score/10
+        dist = 0
+        for k in state.players[1:]:
+            newdist = ((kart.location[0]-k.location[0])**2 + (kart.location[1]-k.location[1])**2 + (kart.location[2]-k.location[2])**2)
+            if newdist > dist:
+                dist = newdist
+        reward -= dist
+
+        for k in state.items:
+            newdist = ((kart.location[0]-k.location[0])**2 + (kart.location[1]-k.location[1])**2 + (kart.location[2]-k.location[2])**2)
+            if newdist > dist:
+                dist = newdist
+        reward -= dist
+        
+
 
         inst = np.asarray(self.race.render_data[0].instance) >> 24 
         img = np.asarray(self.race.render_data[0].image) / 255

@@ -6,8 +6,8 @@ from ray.rllib.agents import ppo
 class TuxEnv(gym.Env):
     def __init__(self, _):
         print("calling __init__")
-        self.action_space = gym.spaces.Box(np.array([-1,0]), np.array([1,1]))  # steer, fire
-        self.observation_space = gym.spaces.Box(low=0.0, high=1.0, shape=(96, 128,3))
+        self.action_space = gym.spaces.Box(np.array([-1,0,0,0]), np.array([1,1,0,0]))  # steer, fire
+        self.observation_space = gym.spaces.Box(low=0.0, high=1.0, shape=(120, 160,3))
 
     def reset(self):
         print("reset?")
@@ -46,29 +46,32 @@ config["num_gpus"] = 1
 config["num_workers"] = 0
 config["eager"] = False
 agent = ppo.PPOAgent(config=config, env=TuxEnv)
-agent.restore("project/checkpoint-50")
+agent.restore("/content/gdrive/My Drive/checkpoint-1")
 
 prev_img = None
 
-def drive(img):
+def drive(img, kart:pystk.Kart):
     """
-    @img: (96,128,3) RGB image
+    @img: (120,160,3) RGB image
     return: pystk.Action
     """
     img = np.asarray(img) / 255.0
 
     i, old_action  = ray.get(count.increment.remote())
+    print(i, old_action)
     prev = ray.get(count.get_img.remote())
 
+    if type(old_action) == int:
+        old_action = [old_action,old_action]
     if i % 5 == 0:
-        action = agent.compute_action(img)[0]
+        action = agent.compute_action(img)
     else:
         action = old_action
 
     steer_dir = action[0]
     #gas = action[1]
     #brake = action[2]
-    fire = actionn[1]
+    fire = action[1]
     setter = count.set_img.remote(img)
     count.set_action.remote(action)
 
