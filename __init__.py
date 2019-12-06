@@ -1,84 +1,131 @@
-import pystk
 import gym, ray
-import numpy as np
+from ray.rllib.agents import sac
 from ray.rllib.agents import ppo
+from ray.tune.logger import pretty_print
+import pystk
+import numpy as np
+import tensorflow as tf
+
+print(pystk.list_karts())
 
 class TuxEnv(gym.Env):
     def __init__(self, _):
         print("calling __init__")
-        
+        gfx_config = pystk.GraphicsConfig.ld()
+        gfx_config.screen_width = 160
+        gfx_config.screen_height = 120
+        gfx_config.render_window = True
+        pystk.clean()
+        pystk.init(gfx_config)
+
+        # Current action space is only steering left/right
         self.action_space = gym.spaces.Tuple([
                 gym.spaces.Box(low=-1.0, high=1.0, shape=(1,)),
                 gym.spaces.Discrete(2)])
-        #self.action_space = gym.spaces.Box(np.array([-1,0]), np.array([1,1]))  # steer, fire
         self.observation_space = gym.spaces.Box(low=0.0, high=1.0, shape=(120, 160, 3))
 
+        self.race = None
+        self.max_step = 4000
+        self.curr_iter = 0
+        self.prev_distance = 0
+
     def reset(self):
-        print("reset?")
-        pass
+        self.curr_iter = 0
+        self.prev_distance = 0
 
+        race_config = pystk.RaceConfig(num_kart=6, mode=pystk.RaceConfig.RaceMode.FREE_FOR_ALL)
+        race_config.players[0].controller = pystk.PlayerConfig.Controller.PLAYER_CONTROL
+        #race_config.players[0].kart = "gnu"
+        race_config.track = 'battleisland'
+        race_config.step_size = 0.1
+
+        if self.race != None:
+            inst = np.asarray(self.race.render_data[0].instance) >> 24 
+            img = np.asarray(self.race.render_data[0].image) / 255
+            #i = np.concatenate((img,inst[..., np.newaxis]), axis=2)
+            i = img
+            self.race.stop()
+            self.race = None
+
+        self.race = pystk.Race(race_config)
+        self.race.start()
+        self.race.step()
+
+        # return obs
+        inst = np.asarray(self.race.render_data[0].instance) >> 24 
+        img = np.asarray(self.race.render_data[0].image) / 255
+        #i = np.concatenate((img,inst[..., np.newaxis]), axis=2)
+        i = img
+        return i 
     def step(self, action):
-        print("step?????")
-        pass
+        self.curr_iter +=1
 
-@ray.remote
-class Counter(object):
-    def __init__(self):
-        self.value = 0
-        self.img = None
-        self.action = 0
+        steer_dir = action[0]
+        rescue = action[1]
+        action = pystk.Action(steer=steer_dir, acceleration=0.5) # , rescue=rescue)
+        self.race.step(action)
+        self.race.step(action)
+        self.race.step(action)
+        self.race.step(action)
+        self.race.step(action)
+        self.race.step(action)
+        self.race.step(action)
 
-    def get_img(self):
-        return self.img
+        state = pystk.WorldState()
+        state.update()
 
-    def set_img(self, img):
-        self.img = img
+        inst = np.asarray(self.race.render_data[0].instance) >> 24 
+        img = np.asarray(self.race.render_data[0].image) / 255
+        #i = np.concatenate((img,inst[..., np.newaxis]), axis=2)
+        i = img
 
-    def set_action(self, action):
-        self.action = action
+        new_distance = state.karts[0].distance_down_track
+        delta = new_distance - self.prev_distance
 
-    def increment(self):
-        self.value += 1
-        return self.value, self.action
+        reward = np.linalg.norm(state.karts[0].velocity) + new_distance / 10.0
+        #reward = new_distance - self.prev_distance
+        #reward = new_distance / 10000
+        reward += (new_distance - state.karts[0].overall_distance)**2 + delta*20
+        
+        scores = state.ffa.scores
+        kart = state.players[0].kart
+        rank = sorted(scores, reverse=True).index(scores[kart.id])
+        score = {0:10,1:8,2:6}.get(rank, 7-rank)
+        reward += score
 
-ray.init(ignore_reinit_error=True)
+        is_stuck = (self.curr_iter > 10) and delta < 0.001
 
-count = Counter.remote()
+        #if is_stuck != rescue:
+        #    reward -= 10000
 
-config = ppo.DEFAULT_CONFIG.copy()
-config["num_gpus"] = 1
-config["num_workers"] = 0
-config["eager"] = False
-agent = ppo.PPOAgent(config=config, env=TuxEnv)
-agent.restore("project/checkpoint-11")
+        done = (self.curr_iter == self.max_step) or is_stuck
 
-prev_img = None
+        # if self.curr_iter % 6 == 0:
+        self.prev_distance = new_distance
 
-def drive(img):
-    """
-    @img: (120,160,3) RGB image
-    return: pystk.Action
-    """
-    img = np.asarray(img) / 255.0
+        # return <obs>, <reward: float>, <done: bool>, <info: dict>
+        return i, reward, done, {}
 
-    i, old_action  = ray.get(count.increment.remote())
-    prev = ray.get(count.get_img.remote())
+from ray import tune
 
-    if i % 5 == 0:
-        action = agent.compute_action(img)[0]
-    else:
-        action = old_action
-
-    steer_dir = action[0]
-    #gas = action[1]
-    #brake = action[2]
-    #fire = actionn[1]
-    setter = count.set_img.remote(img)
-    count.set_action.remote(action)
-
-    if i > 10:
-        if np.sum(np.abs(img-prev)) < 50:
-            return pystk.Action(rescue=True)
-
-    return pystk.Action(steer=steer_dir, acceleration=1.0)
-
+if __name__ == '__main__':
+    ray.init()
+    tune.run(
+        "PPO",
+        checkpoint_freq=1,
+        stop={"training_iteration": 50},
+        config={
+            "env": TuxEnv,
+    		"evaluation_interval": 0,
+            "num_gpus": 1,
+            "num_workers": 0,
+            "lambda": 0.95,
+            "kl_coeff": 0.2,
+    		"train_batch_size": 1000,
+            "vf_clip_param": 20,
+            "num_sgd_iter": 30,
+            "entropy_coeff": 0.01,
+            "eager": False,
+            #"lr": tune.grid_search([0.001, 0.0001]),
+        },
+    )
